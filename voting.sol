@@ -6,27 +6,23 @@ import "https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contr
 contract Voting is Ownable {
     /**
      * @title Voter
-     * @dev définit l'état du vote
+     * @dev définit la structure de Voter et son état
      */
     struct Voter {
         bool isRegistered;
         bool hasVoted;
         uint8 votedProposalId;
         uint8 authorise;
-        bool isDeleted;
     }
 
     /*
-     * @title gestion des utlisateurs authorisés par l'administrateur à procéder à un vote
+     * @title gestion des utilisateurs autorisés par l'administrateur à procéder à un vote
      * @dev représente un mapping des addresses capables avec une structure de donnée Voter
-     * @custom: génére un evement pour indiquer la crééation de l'addresse dans le mappage
      */
-    mapping(address => Voter) public whiteListedPeople;
+    mapping(address => Voter) whiteListedPeople;
 
     /*
      * @title Events : déclaration de l'ensemble des évenements à capturer
-     * @dev représente un mapping des addresses capables avec une structure de donnée Voter
-     * @custom: génére un evement pour indiquer la crééation de l'addresse dans le mappage
      */
 
     event Authorized(address _address);
@@ -41,7 +37,8 @@ contract Voting is Ownable {
 
     /**
      * @title Proposal
-     * @dev définit la proposition de vote des utilisateurs
+     * @param: description définit la proposition de vote des utilisateurs
+     * @param: comptabilisation des votes pour une proposition
      */
 
     struct Proposal {
@@ -53,17 +50,15 @@ contract Voting is Ownable {
     Proposal[] votePropositions;
 
     /**
-    * @title WorkflowStatus
-    * @authorize gestion par l'administrateur du processus de vote dans le temps
+    * @title WorkflowStatus: gestion par l'administrateur du processus de vote dans le temps
     * @param enum
                 RegisteringVoters => enregistrement des voteurs
                 ProposalsRegistrationStarted => Commencement de la session d'enregistrement des propositions
                 ProposalsRegistrationEnded => Fin de la session d'enregistrement des propositions
                 VotingSessionStarted => Commencement du vote
                 VotingSessionEnded => Fin de vote
-                VotesTallied => comptage des votes
-    * @dev authorise une addresse à voter 
-    * @dev emet un evenement pour capter l'autorisation
+                VotesTallied => Comptage des votes
+    * @dev permet d'autoriser une action de l'utlisateur sur une fonction
     */
 
     enum WorkflowStatus {
@@ -75,11 +70,21 @@ contract Voting is Ownable {
         VotesTallied
     }
 
-    //déclaration de l'état initial pour les énumérations
-    //je le mets en public pour avoir un getteur et que tu controle les id
-    //des différentes étapes
+    /*
+     * Déclaration de l'état initial pour les énumérations
+     * @Dev public pour avoir un getteur pour accès direct au statut en cours
+     */
+
     WorkflowStatus public defaultstate;
     WorkflowStatus previous;
+
+    /*
+     * @title winningProposalId
+     * @dev représente l’id du gagnant
+     */
+    uint256 winningProposalId;
+
+    ///////////////////MODIFIER////////////////////////////////////:
     /*
      * @titre : atStage
      * @dev : Modifier pour prévenir l'appel de function hors du processus
@@ -95,7 +100,8 @@ contract Voting is Ownable {
 
     /*
      * @titre : CheckAutorisation
-     * @dev : confirme que le participant est autorisé à participer     */
+     * @dev : confirme que le participant est autorisé à participer
+     */
 
     modifier CheckAutorisation() {
         require(
@@ -107,7 +113,7 @@ contract Voting is Ownable {
 
     /*
      * @titre : CheckRegistration
-     * @dev : confirme la resgistration des participants au vote
+     * @dev : confirme l'enregistrement des participants pour la session de vote
      */
 
     modifier CheckRegistration() {
@@ -118,29 +124,12 @@ contract Voting is Ownable {
         _;
     }
 
-    /*
-     * @title winningProposalId
-     * @dev représente l’id du gagnant ou une fonction getWinner qui retourne le gagnant.
-     */
-    uint256 winningProposalId;
-
-    /*
-    L'administrateur de vote met fin à la session d'enregistrement des propositions.
-    L'administrateur du vote commence la session de vote.
-    Les électeurs inscrits votent pour leur proposition préférée.
-    L'administrateur du vote met fin à la session de vote.
-    L'administrateur du vote comptabilise les votes.
-    Tout le monde peut vérifier les derniers détails de la proposition gagnante.
-    */
-    //
-
-    //L'administrateur du vote enregistre une liste blanche d'électeurs identifiés par leur adresse Ethereum.
+    ////////////////////////////////////////////////////////////////////////
 
     /*
      * @authorize gestion de la whitelist par l'administrateur
      * @param address _address
      * @return: bool
-     * call: AutoRegisteristration si l'addresse est autorisé on enregistre
      * @dev authorise une addresse à voter
      * @dev emet un evenement pour capter l'autorisation
      *
@@ -152,14 +141,13 @@ contract Voting is Ownable {
         atStage(WorkflowStatus.RegisteringVoters)
         returns (bool)
     {
-        //check que l'addresse n'est pas une addresse nul=> je n'ai pas de regex
+        //check que l'addresse n'est pas une addresse nul
         require(_address != address(0));
         //check si la personne à dàja voter
         require(
             whiteListedPeople[_address].authorise != 1,
             "Voteur deja enregistre"
         );
-        assert(whiteListedPeople[_address].isDeleted == false);
 
         if (whiteListedPeople[_address].authorise != 1) {
             whiteListedPeople[_address].authorise = 1;
@@ -171,8 +159,6 @@ contract Voting is Ownable {
 
     /*
      * @AutoRegisteristration: Permet au votant de s'enregister si il a été autorisé
-     * @param address _address
-     * call: internal
      * @dev enregistre le votant, declare son vote a false
      * @dev emet un evenement pour capter l'enregistrement du votant finalisé
      */
@@ -187,16 +173,20 @@ contract Voting is Ownable {
         emit VoterRegistered(msg.sender);
     }
 
+    /// Pour changer les étapes du prossessus
+    // 2 POSSIBILITEES:
+    //-1 Incrémentation automatique via incrementStatus()  - avantge rapidité, simplicité
+    //-2 Selection directe via ManageVotingFlow avec un uint - avantage en cas d'erreur de l'admin (double clique) on peut revenir en arrière.
+
     /*
      * @titre ManageVotingFlow
-     * @param uint permettant la mise à jour de la valeur de defaultstate
+     * @param Function permettant à l'admin de choisir un état
      * @dev assertion que l'index choisi fait partie du tableau
      * @dev attribution de la nouvelle valeur defaultstate
      */
     function ManageVotingFlow(uint8 _votingFlow) external onlyOwner {
-        //verifie si le uint fait bien partie du tableau
         //je considère que VotesTallied sera toujours la dernière étapes
-        //ce qui permettrait de rajouter des étapes avant sans modifié le code
+        //ce qui permettrait de rajouter des étapes avant sans modifier le code
         require(
             _votingFlow <= uint8(WorkflowStatus.VotesTallied),
             "Index hors du tableau"
@@ -206,7 +196,7 @@ contract Voting is Ownable {
         previous = getPrevious();
 
         defaultstate = WorkflowStatus(_votingFlow);
-
+        //emets les deux status en transition
         emit WorkflowStatusChange(previous, defaultstate);
     }
 
@@ -217,7 +207,7 @@ contract Voting is Ownable {
         return defaultstate;
     }
 
-    /*titre:incrementStatus : utilisation de incrementStatus pour facilité la gestion du flow par admin
+    /*titre:incrementStatus : utilisation de incrementStatus pour facilité la gestion du flow par l'admin
      *@Dev : incremente de +1 le statue, passe à l'étape suivante
      *@Dev: emet un evenemnt de transition
      */
@@ -237,18 +227,12 @@ contract Voting is Ownable {
     *   @Dev: controle si les voteurs sont enregistrés
         @Dev: Push la proposition, récupérer identifiant de tableau et génére un evenement de soumission de proposition
     */
-    //L'administrateur du vote commence la session d'enregistrement de la proposition.
-    // Appel de la fonction ManageVotingFlow avec parametre 1
-    // Les électeurs inscrits sont autorisés à enregistrer leurs propositions pendant que la session d'enregistrement est active.
 
     function StartProposition(string memory _PropositionDescription)
         external
         atStage(WorkflowStatus.ProposalsRegistrationStarted)
         CheckRegistration
     {
-        //si les enregistrements des propositions sont ouvertes alors les personnes de la whiteList
-        //peuvent ajouter leurs propositions
-
         votePropositions.push(
             Proposal({description: _PropositionDescription, voteCount: 0})
         );
@@ -258,11 +242,9 @@ contract Voting is Ownable {
     }
 
     /* @title : getProposals
-    *  @param : Proposal[] memory, uint[] memory
-    *   @Dev: Recupere les propositions dans un tableau Proposal
-    *   @Dev: Recupere les identifiant dans un autre tableau mais dans l'ordre
-              afin de connaitre id des propisitions à utliser pour le vote
-    */
+     *  @param : Proposal[] memory, uint[] memory
+     *   @Dev: Recupere les propositions dans un tableau Proposal
+     */
 
     function getProposals() external view returns (Proposal[] memory) {
         return votePropositions;
@@ -337,24 +319,28 @@ contract Voting is Ownable {
     function getAllVotersInfo(address _address)
         external
         view
-        atStage(WorkflowStatus.VotesTallied)
         returns (
             address,
             bool,
             bool,
-            uint256
+            uint8,
+            uint8
         )
     {
         bool isRegistered = whiteListedPeople[_address].isRegistered;
         bool hasVoted = whiteListedPeople[_address].hasVoted;
-        uint256 votedProposalId = whiteListedPeople[_address].votedProposalId;
-        return (_address, isRegistered, hasVoted, votedProposalId);
+        uint8 votedProposalId = whiteListedPeople[_address].votedProposalId;
+        uint8 autorise = whiteListedPeople[_address].authorise;
+        return (_address, isRegistered, hasVoted, votedProposalId, autorise);
     }
 
-    //Fonction supplementaires///
+    ////////////////////////Fonction supplementaires//////////////////////////////////
+
+    //-1 Changement de vote pendant la session avec DecideToChangeVote();
+    //-2 incrémentation du flow par l'admin : 2 possibilitées
 
     /* @title : DecideToChangeVote
-     *  goal: Permet de modifier son vote pendant la phase devote uniquement si on a deja voté une fois.
+     *  goal: Permet de modifier son vote pendant la phase de vote uniquement si on a deja voté une fois.
      *  Dev : Incrémente le vote pour la nouvelle propostion et décremente pour l'ancienne proposition
      */
 
